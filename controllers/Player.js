@@ -4,13 +4,6 @@ import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-export const getPlayerById = async (req, res) => {
-    const playerId = req.params.id;
-    connection.query('SELECT * FROM Player WHERE Id = ?', [playerId], (error, results) => {
-        if (error) return res.status(500).send(error);
-        res.json(results[0]);
-    });
-};
 
 export const register = async (req, res) => {
     const { Username, Password, FirstName, MiddleName, LastName, Dob, Email, Tel, Gender } = req.body;
@@ -82,4 +75,142 @@ export const login = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+export const getPlayerById = async (req, res) => {
+    const playerId = req.params.id;
+    try {
+        // Truy vấn kết hợp thông tin Player và Fullname, không dùng CONCAT
+        const query = `
+            SELECT 
+                Player.Id,
+                Player.Username,
+                Player.Password,
+                Fullname.FirstName,
+                Fullname.MiddleName,
+                Fullname.LastName,
+                Player.Dob,
+                Player.Email, 
+                Player.Tel,
+                Player.Gender 
+            FROM Player
+            JOIN Fullname ON Player.Id = Fullname.PlayerId
+            WHERE Player.Id = ?
+        `;
+
+        connection.query(query, [playerId], (error, results) => {
+            if (error) {
+                return res.status(500).send(error);
+            }
+
+            if (results.length > 0) {
+                // Lấy dữ liệu của người chơi và chuyển đổi Dob sang chuỗi
+                const playerInfo = results[0];
+                if (playerInfo.Dob) {
+                    const dobDate = new Date(playerInfo.Dob); // Đảm bảo sử dụng Date để xử lý
+                    playerInfo.Dob = dobDate.toLocaleDateString('en-GB'); // Dùng 'en-GB' để định dạng 'DD/MM/YYYY'
+                }
+                
+                console.log(playerInfo);
+                res.json(playerInfo); 
+            } else {
+                res.status(404).send({ message: "Player not found" });
+            }
+        });
+    } catch (error) {
+        console.error('Error get info player:', error);
+        return res.status(500).json({ error: error.message });
+    }
+};
+
+export const updatePlayer = async (req, res) => {
+    const { id } = req.params;
+    const { username, password, firstname, middlename, lastname, dob, email, tel, gender } = req.body;
+    console.log(req.body);
+    try {
+        const querySelectPlayer = `SELECT * FROM Player WHERE Id = ?`;
+        connection.query(querySelectPlayer, [id], async (error, results) => {
+            if (error) return res.status(500).json({ message: "Database error", error });
+            if (results.length === 0) return res.status(404).json({ message: "Player not found" });
+
+            // Lấy thông tin hiện tại của player
+            const player = results[0];
+
+            // Tạo danh sách các trường cần cập nhật cho bảng Player
+            let fieldsToUpdatePlayer = [];
+            let valuesPlayer = [];
+
+            if (username && username !== player.Username) {
+                fieldsToUpdatePlayer.push("Username = ?");
+                valuesPlayer.push(username);
+            }
+            if (password && password !== player.Password) {
+                const hashedPassword = await bcrypt.hash(password, 10);
+                fieldsToUpdatePlayer.push("Password = ?");
+                valuesPlayer.push(hashedPassword);
+            }
+
+            // Chuyển đổi 'dob' từ string thành Date và so sánh
+            if (dob && dob !== player.Dob.toISOString().split('T')[0]) { // Chuyển 'dob' của player sang kiểu string (yyyy-mm-dd)
+                const dobDate = new Date(dob); // Chuyển 'dob' nhận từ request body sang kiểu Date
+                fieldsToUpdatePlayer.push("Dob = ?");
+                valuesPlayer.push(dobDate);
+            }
+
+            if (email && email !== player.Email) {
+                fieldsToUpdatePlayer.push("Email = ?");
+                valuesPlayer.push(email);
+            }
+            if (tel && tel !== player.Tel) {
+                fieldsToUpdatePlayer.push("Tel = ?");
+                valuesPlayer.push(tel);
+            }
+            if (gender && gender !== player.Gender) {
+                fieldsToUpdatePlayer.push("Gender = ?");
+                valuesPlayer.push(gender);
+            }
+
+            if (fieldsToUpdatePlayer.length === 0 && !firstname && !middlename && !lastname) {
+                return res.status(200).json({ message: "Không có thay đổi nào" });
+            }
+
+            // Xây dựng câu truy vấn SQL cho bảng Player
+            const queryUpdatePlayer = `UPDATE Player SET ${fieldsToUpdatePlayer.join(", ")} WHERE Id = ?`;
+            valuesPlayer.push(id);
+
+            connection.query(queryUpdatePlayer, valuesPlayer, (error, results) => {
+                if (error) return res.status(500).json({ message: "Failed to update player", error });
+                
+                // Cập nhật bảng Fullname nếu có thay đổi firstname, middlename, hoặc lastname
+                if (firstname || middlename || lastname) {
+                    const querySelectFullname = `SELECT * FROM Fullname WHERE PlayerId = ?`;
+                    connection.query(querySelectFullname, [id], (error, fullnameResults) => {
+                        if (error) return res.status(500).json({ message: "Database error", error });
+                        if (fullnameResults.length > 0) {
+                            // Fullname exists, update it
+                            const queryUpdateFullname = `UPDATE Fullname SET Firstname = ?, Middlename = ?, Lastname = ? WHERE PlayerId = ?`;
+                            const valuesFullname = [firstname || fullnameResults[0].Firstname, 
+                                                    middlename || fullnameResults[0].Middlename, 
+                                                    lastname || fullnameResults[0].Lastname, 
+                                                    id];
+
+                            connection.query(queryUpdateFullname, valuesFullname, (error, updateResults) => {
+                                if (error) return res.status(500).json({ message: "Failed to update fullname", error });
+                                res.status(200).json({ message: "Player updated successfully" });
+                            });
+                        } 
+                    });
+                } else {
+                    res.status(200).json({ message: "Player updated successfully" });
+                }
+            });
+        });
+        // console.log(`Update profile of Player with Id ${id} successful!`);
+    } catch (error) {
+        res.status(500).json({ message: "Failed to update player", error });
+    }
+};
+
+
+
+
 

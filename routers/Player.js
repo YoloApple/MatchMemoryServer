@@ -1,5 +1,5 @@
 import express from 'express';
-import { getPlayerById, login, register } from '../controllers/Player.js';
+import { getPlayerById, login, register, updatePlayer } from '../controllers/Player.js';
 
 const router = express.Router();
 
@@ -11,5 +11,8 @@ router.post('/register', register);
 
 // POST login player
 router.post('/login', login);
+
+//POST update player
+router.put('/updatePlayer/:id', updatePlayer)
 
 export default router;
