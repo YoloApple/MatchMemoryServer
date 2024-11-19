@@ -8,36 +8,49 @@ const JWT_SECRET = process.env.JWT_SECRET;
 export const register = async (req, res) => {
     const { Username, Password, FirstName, MiddleName, LastName, Dob, Email, Tel, Gender } = req.body;
     console.log(req.body);
+
     try {
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(Password, 10);
-
-        // Convert the Dob (Date of Birth) from string to Date object
-        const dobDate = new Date(Dob);
-        if (isNaN(dobDate.getTime())) {
-            // If Dob is invalid, return an error
-            return res.status(400).json({ error: 'Invalid date format for Dob' });
-        }
-
-        // Insert into Player table first
-        const queryPlayer = 'INSERT INTO Player (Username, Password, Dob, Email, Tel, Gender) VALUES (?, ?, ?, ?, ?, ?)';
-        connection.query(queryPlayer, [Username, hashedPassword, dobDate, Email, Tel, Gender], (error, playerResults) => {
+        // Kiểm tra xem Username đã tồn tại chưa
+        const checkUsernameQuery = 'SELECT * FROM Player WHERE Username = ?';
+        connection.query(checkUsernameQuery, [Username], async (error, results) => {
             if (error) return res.status(500).send(error);
 
-            const playerId = playerResults.insertId;
+            // Nếu Username đã tồn tại, trả về lỗi
+            if (results.length > 0) {
+                console.log('Username already exists');
+                return res.status(400).json({ error: 'Username already exists' });
+            }
 
-            // Now insert into Fullname table with the generated playerId
-            const queryFullname = 'INSERT INTO Fullname (FirstName, MiddleName, LastName, PlayerId) VALUES (?, ?, ?, ?)';
-            connection.query(queryFullname, [FirstName, MiddleName, LastName, playerId], (error, fullnameResults) => {
+            // Hash the password
+            const hashedPassword = await bcrypt.hash(Password, 10);
+
+            // Convert the Dob from string to Date object
+            const dobDate = new Date(Dob);
+            if (isNaN(dobDate.getTime())) {
+                // If Dob is invalid, return an error
+                return res.status(400).json({ error: 'Invalid date format for Dob' });
+            }
+
+            // Insert into Player table
+            const queryPlayer = 'INSERT INTO Player (Username, Password, Dob, Email, Tel, Gender) VALUES (?, ?, ?, ?, ?, ?)';
+            connection.query(queryPlayer, [Username, hashedPassword, dobDate, Email, Tel, Gender], (error, playerResults) => {
                 if (error) return res.status(500).send(error);
 
-                // Update Player table to reference Fullname
-                const queryUpdatePlayer = 'UPDATE Player SET Fullname = ? WHERE Id = ?';
-                connection.query(queryUpdatePlayer, [fullnameResults.insertId, playerId], (error) => {
+                const playerId = playerResults.insertId;
+
+                // Insert into Fullname table with the generated playerId
+                const queryFullname = 'INSERT INTO Fullname (FirstName, MiddleName, LastName, PlayerId) VALUES (?, ?, ?, ?)';
+                connection.query(queryFullname, [FirstName, MiddleName, LastName, playerId], (error, fullnameResults) => {
                     if (error) return res.status(500).send(error);
 
-                    res.status(201).json({ playerId: playerId });
-                    console.log('register successfull')
+                    // Update Player table to reference Fullname
+                    const queryUpdatePlayer = 'UPDATE Player SET Fullname = ? WHERE Id = ?';
+                    connection.query(queryUpdatePlayer, [fullnameResults.insertId, playerId], (error) => {
+                        if (error) return res.status(500).send(error);
+
+                        res.status(201).json({ playerId: playerId });
+                        console.log('Register successful');
+                    });
                 });
             });
         });
@@ -46,6 +59,7 @@ export const register = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
 
 export const login = async (req, res) => {
     const { Username, Password } = req.body;
@@ -79,7 +93,7 @@ export const login = async (req, res) => {
 export const getPlayerById = async (req, res) => {
     const playerId = req.params.id;
     try {
-        // Truy vấn kết hợp thông tin Player và Fullname, không dùng CONCAT
+        // Truy vấn kết hợp thông tin Player và Fullname
         const query = `
             SELECT 
                 Player.Id,
@@ -202,9 +216,9 @@ export const updatePlayer = async (req, res) => {
                 } else {
                     res.status(200).json({ message: "Player updated successfully" });
                 }
+                console.log('Update player successful');
             });
         });
-        // console.log(`Update profile of Player with Id ${id} successful!`);
     } catch (error) {
         res.status(500).json({ message: "Failed to update player", error });
     }
