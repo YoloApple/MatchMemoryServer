@@ -7,7 +7,7 @@ const connection = mysql.createConnection({
     host: 'localhost',
     user: 'root',
     password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME
+    database: 'gameserver'
 });
 
 connection.connect((err) => {
